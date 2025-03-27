@@ -1,0 +1,23 @@
+# Ignore node_modules and yarn cache
+node_modules
+.yarn/*
+!.yarn/patches
+.yarnrc.yml
+
+# Ignore build artifacts
+dist
+build
+out
+*.tsbuildinfo
+
+# Ignore environment and config files
+.env
+.env.local
+
+# Ignore editor/project files
+.vscode
+.idea
+
+# Ignore Git and logs
+.git
+*.log
