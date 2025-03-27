@@ -27,6 +27,18 @@ The solver is the component that fulfills user intents by executing the most eff
    ```bash
    git clone https://github.com/BootNodeDev/intents-framework.git
    cd intents-framework
+
+
+   OPEN POWERSHELL
+   npm install --global yarn
+   yarn --version
+
+   IF YARN IS NOT v4.0+
+   open powershell
+   corepack enable
+   corepack prepare yarn@4.5.1 --activate
+   yarn --version
+   yarn install
    ```
 
 2. Create a Dockerfile in the root directory with the following content:
