@@ -1,102 +1,93 @@
-# Intent Chamber Implementation Guide
+# Testnet Intent Chamber Integration Guide
 
-This guide provides step-by-step instructions for implementing the Intent Chamber with real blockchain functionality using the Open Intents Framework (OIF).
+## Overview
 
-## Project Overview
+This guide walks you through setting up a custom Next.js (JavaScript) UI that integrates with the Open Intents Framework to create a testnet-only Intent Chamber. This implementation will focus on Base Sepolia and OP Sepolia testnets for token bridging.
 
-The Intent Chamber is a Next.js application that allows users to:
+## Project Setup
 
-- Connect their wallet to Base Sepolia and Optimism Sepolia testnets
-- Create cross-chain token transfer intents
-- Submit these intents to the blockchain where they can be discovered by solvers
-- Monitor the execution of their intents
+### 1. Create a New Next.js Project
 
-This implementation uses real blockchain connections instead of mocks, with local Docker-based solvers processing the intents.
+```bash
+# Create a new Next.js project with JavaScript
+npx create-next-app@latest intent-chamber --javascript --eslint
+cd intent-chamber
+```
 
-## Architecture Overview
+### 2. Install Dependencies
 
-The Intent Chamber uses a hybrid architecture:
+```bash
+npm install @bootnodedev/intents-framework-core @rainbow-me/rainbowkit viem wagmi@2.x @tanstack/react-query framer-motion react-toastify tailwindcss
+```
 
-1. **On-chain**: Intents are signed by users and published to the blockchain
-2. **Off-chain**: Solvers run locally in Docker containers, monitoring the blockchain for new intents
-3. **On-chain**: When a solver processes an intent, it submits the fulfillment transaction back to the blockchain
+### 3. Configure Tailwind CSS
 
-This design offers the efficiency of off-chain computation with the security and transparency of on-chain verification.
+```bash
+npx tailwindcss init -p
+```
+
+Update `tailwind.config.js`:
+
+```javascript
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./pages/**/*.{js,jsx}",
+    "./components/**/*.{js,jsx}",
+    "./app/**/*.{js,jsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+};
+```
 
 ## Project Structure
+
+Create the following folder structure:
 
 ```
 intent-chamber/
 ├── components/
 │   ├── intent/
-│   │   ├── IntentChamber.js
-│   │   ├── SolverCard.js         # New component for solver selection
-│   │   ├── IntentForm.js         # New component for intent creation
-│   │   ├── IntentStatus.js       # New component for tracking execution
-│   │   └── IntentReview.js       # New component for reviewing intent details
-│   ├── ui/
-│   │   ├── Button.js             # Reusable UI components
-│   │   ├── Card.js
-│   │   └── Loader.js
+│   │   ├── IntentChamber.js       # Main component for intent flow
+│   │   ├── SolverCard.js          # Component for solver selection
+│   │   ├── IntentReview.js        # Component for reviewing intent details
+│   │   └── IntentStatus.js        # Component for tracking execution
 │   └── layout/
-│       ├── Header.js             # Site header with wallet connection
-│       └── Footer.js             # Site footer with links
+│       └── Header.js              # Site header with wallet connection
 ├── lib/
-│   ├── wallet-config.js
-│   ├── oif-components.js
-│   ├── intent-utils.js           # New utility functions for intent operations
-│   ├── chain-config.js           # New testnet configuration details
-│   └── solver-config.js          # New solver configuration
+│   ├── wallet-config.js           # Wallet and chain configuration
+│   ├── oif-components.js          # OIF component imports
+│   ├── chain-config.js            # Testnet configuration
+│   └── solver-client.js           # Interface for solver interactions
+├── hooks/
+│   └── useIntent.js               # Custom hook for intent management
 ├── pages/
-│   ├── index.js
-│   ├── intents/[id].js           # New page for individual intent tracking
-│   └── _app.js
+│   ├── _app.js                    # App component with providers
+│   └── index.js                   # Main page
 ├── public/
-│   └── images/
-│       └── ... (solver images)
-├── styles/
-│   └── globals.css
-├── hooks/                       # New directory for custom React hooks
-│   ├── useIntent.js             # Hook for intent state management
-│   ├── useSolver.js             # Hook for solver interactions
-│   └── useChainData.js          # Hook for blockchain data
-└── ... (configuration files)
+│   └── images/                    # Solver images
+└── styles/
+    └── globals.css                # Global styles
 ```
 
-## Setup Instructions
+## Implementation Steps
 
-### 1. Directory Setup
+### 1. Configure Wallet and Chain Integration
 
-Create the necessary directories:
-
-```bash
-mkdir -p components/intent lib public/images
-```
-
-### 2. Dependencies Installation
-
-Install the required packages:
-
-```bash
-npm install @bootnodedev/intents-framework-core @hyperlane-xyz/sdk @hyperlane-xyz/widgets @rainbow-me/rainbowkit viem wagmi @tanstack/react-query zod framer-motion react-toastify
-```
-
-### 3. Wallet Configuration
-
-Create `lib/wallet-config.js` to configure the blockchain connections:
+Create `lib/wallet-config.js`:
 
 ```javascript
-import { createConfig, configureChains } from "wagmi";
-import { publicProvider } from "wagmi/providers/public";
-import { baseSepolia, optimismSepolia } from "wagmi/chains";
+import { createConfig } from "wagmi";
+import { baseSepolia, optimismSepolia } from "viem/chains";
 import { getDefaultWallets } from "@rainbow-me/rainbowkit";
+import { http } from "viem";
 import "@rainbow-me/rainbowkit/styles.css";
 
 // Configure testnet chains
-const { chains, publicClient } = configureChains(
-  [baseSepolia, optimismSepolia],
-  [publicProvider()]
-);
+const chains = [baseSepolia, optimismSepolia];
 
 // Real wallet connections
 const { connectors } = getDefaultWallets({
@@ -106,15 +97,20 @@ const { connectors } = getDefaultWallets({
 });
 
 export const wagmiConfig = createConfig({
-  autoConnect: true,
+  chains,
+  transports: {
+    [baseSepolia.id]: http(),
+    [optimismSepolia.id]: http(),
+  },
   connectors,
-  publicClient,
 });
+
+export { chains };
 ```
 
-### 4. OIF Components Setup
+### 2. Set Up OIF Components
 
-Create `lib/oif-components.js` to import and expose the OIF components:
+Create `lib/oif-components.js`:
 
 ```javascript
 import dynamic from "next/dynamic";
@@ -154,16 +150,191 @@ export const SolverClient = dynamic(
 );
 ```
 
-### 5. Intent Chamber Component
+### 3. Configure Testnet Chains and Tokens
+
+Create `lib/chain-config.js`:
+
+```javascript
+// Chain configuration for testnet interactions
+export const CHAIN_CONFIG = {
+  // Base Sepolia testnet configuration
+  "base-sepolia": {
+    id: 84532,
+    name: "Base Sepolia",
+    rpcUrl: "https://sepolia.base.org",
+    blockExplorer: "https://sepolia.basescan.org",
+    currency: "ETH",
+    // Test tokens available on Base Sepolia
+    tokens: [
+      {
+        symbol: "USDC",
+        name: "USD Coin",
+        address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+        decimals: 6,
+      },
+      {
+        symbol: "WETH",
+        name: "Wrapped ETH",
+        address: "0x4200000000000000000000000000000000000006",
+        decimals: 18,
+      },
+    ],
+  },
+
+  // Optimism Sepolia testnet configuration
+  "optimism-sepolia": {
+    id: 11155420,
+    name: "Optimism Sepolia",
+    rpcUrl: "https://sepolia.optimism.io",
+    blockExplorer: "https://sepolia-optimism.etherscan.io",
+    currency: "ETH",
+    // Test tokens available on Optimism Sepolia
+    tokens: [
+      {
+        symbol: "USDC",
+        name: "USD Coin",
+        address: "0x5fd84259d66Cd46123540766Be93DFE6D43130D7",
+        decimals: 6,
+      },
+      {
+        symbol: "WETH",
+        name: "Wrapped ETH",
+        address: "0x4200000000000000000000000000000000000006",
+        decimals: 18,
+      },
+    ],
+  },
+};
+
+// Helper function to get chain details by ID or name
+export function getChainDetails(chainIdOrName) {
+  if (typeof chainIdOrName === "number") {
+    return Object.values(CHAIN_CONFIG).find(
+      (chain) => chain.id === chainIdOrName
+    );
+  }
+
+  return CHAIN_CONFIG[chainIdOrName];
+}
+
+// Get token details for a specific chain
+export function getTokensForChain(chainIdOrName) {
+  const chain = getChainDetails(chainIdOrName);
+  return chain ? chain.tokens : [];
+}
+```
+
+### 4. Create Intent Management Hook
+
+Create `hooks/useIntent.js`:
+
+```javascript
+import { useState, useCallback } from "react";
+import { IntentBuilder, SolverClient } from "../lib/oif-components";
+import { getChainDetails } from "../lib/chain-config";
+
+export function useIntent() {
+  const [intent, setIntent] = useState(null);
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState(null);
+
+  // Create a new intent
+  const createIntent = useCallback(async (intentData, walletProvider) => {
+    try {
+      setStatus("creating");
+      setError(null);
+
+      // Get chain details for validation
+      const sourceChain = getChainDetails(intentData.sourceChain);
+      const targetChain = getChainDetails(intentData.targetChain);
+
+      if (!sourceChain || !targetChain) {
+        throw new Error("Invalid chains specified");
+      }
+
+      // Build the intent using the OIF
+      const intentBuilder = new IntentBuilder({
+        sourceChain: intentData.sourceChain,
+        targetChain: intentData.targetChain,
+        tokenAddress: intentData.tokenAddress,
+        amount: intentData.amount,
+        recipient: intentData.recipient,
+      });
+
+      const builtIntent = await intentBuilder.build();
+
+      // Sign the intent with the user's wallet
+      const signedIntent = await builtIntent.sign(walletProvider);
+
+      setIntent({
+        ...intentData,
+        builtIntent,
+        signedIntent,
+        id: signedIntent.id,
+        createdAt: new Date().toISOString(),
+      });
+
+      setStatus("created");
+      return signedIntent;
+    } catch (err) {
+      setStatus("error");
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  // Submit the intent to the blockchain
+  const submitIntent = useCallback(async (signedIntent) => {
+    try {
+      setStatus("submitting");
+
+      const solverClient = new SolverClient();
+      await solverClient.submitIntent(signedIntent);
+
+      setStatus("submitted");
+      return true;
+    } catch (err) {
+      setStatus("error");
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  // Get the status of an intent
+  const getIntentStatus = useCallback(async (intentId) => {
+    try {
+      const solverClient = new SolverClient();
+      const status = await solverClient.getIntentStatus(intentId);
+      setStatus(status);
+      return status;
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  }, []);
+
+  return {
+    intent,
+    status,
+    error,
+    createIntent,
+    submitIntent,
+    getIntentStatus,
+  };
+}
+```
+
+### 5. Create UI Components
+
+#### 5.1. Create the Main IntentChamber Component
 
 Create `components/intent/IntentChamber.js`:
 
 ```javascript
-// components/intent/IntentChamber.js
 import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
-import { toast } from "react-toastify";
-import { useAccount, useNetwork } from "wagmi";
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
+import { useAccount } from "wagmi";
 import {
   TransferTokenForm,
   IntentBuilder,
@@ -208,7 +379,6 @@ export function IntentChamber() {
   const [signedIntent, setSignedIntent] = useState(null);
   const [executionStatus, setExecutionStatus] = useState("pending");
   const { address, isConnected } = useAccount();
-  const { chain } = useNetwork();
 
   // Create and build a real blockchain intent
   const handleIntentCreated = async (intentData) => {
@@ -298,6 +468,8 @@ export function IntentChamber() {
 
   return (
     <div className="w-full max-w-4xl mx-auto">
+      <ToastContainer position="top-right" autoClose={5000} />
+
       {stage === "selection" && (
         <div className="bg-slate-800 p-6 rounded-lg shadow-lg">
           <h2 className="text-2xl font-bold mb-4">Create Intent</h2>
@@ -345,7 +517,7 @@ export function IntentChamber() {
 }
 ```
 
-### 5.1 SolverCard Component
+#### 5.2. SolverCard Component
 
 Create `components/intent/SolverCard.js`:
 
@@ -356,43 +528,44 @@ import Image from "next/image";
 export function SolverCard({ solver, onClick }) {
   return (
     <div
-      className="bg-slate-700 p-4 rounded-lg shadow cursor-pointer hover:bg-slate-600 transition-colors"
+      className="bg-slate-700 p-4 rounded-lg cursor-pointer transition-all hover:bg-slate-600 hover:-translate-y-1"
       onClick={onClick}
     >
-      <div className="flex justify-center mb-3">
-        <div className="w-20 h-20 relative rounded-full overflow-hidden">
-          <Image
-            src={solver.image}
-            alt={solver.name}
-            fill
-            className="object-cover"
-          />
+      <div className="flex flex-col items-center">
+        <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-500 mb-3">
+          {solver.image && (
+            <Image
+              src={solver.image}
+              alt={solver.name}
+              width={80}
+              height={80}
+              className="object-cover"
+            />
+          )}
         </div>
-      </div>
-
-      <h3 className="text-xl font-semibold text-center mb-2">{solver.name}</h3>
-      <p className="text-center text-gray-300 mb-3">{solver.description}</p>
-
-      <div className="text-sm text-gray-400">
-        <div className="flex justify-between mb-1">
-          <span>Speed:</span>
-          <span>
-            {solver.speedMultiplier < 1
-              ? "Fast"
-              : solver.speedMultiplier > 1
-                ? "Slow"
-                : "Average"}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span>Cost:</span>
-          <span>
-            {solver.costMultiplier > 1
-              ? "High"
-              : solver.costMultiplier < 1
-                ? "Low"
-                : "Average"}
-          </span>
+        <h3 className="text-xl font-semibold">{solver.name}</h3>
+        <p className="text-slate-300 text-sm mt-1">{solver.description}</p>
+        <div className="mt-3 grid grid-cols-2 gap-2 w-full">
+          <div className="bg-slate-800 p-2 rounded text-center">
+            <p className="text-xs text-slate-400">Speed</p>
+            <p className="text-sm">
+              {solver.speedMultiplier < 1
+                ? "Fast"
+                : solver.speedMultiplier === 1
+                  ? "Medium"
+                  : "Slow"}
+            </p>
+          </div>
+          <div className="bg-slate-800 p-2 rounded text-center">
+            <p className="text-xs text-slate-400">Cost</p>
+            <p className="text-sm">
+              {solver.costMultiplier > 1
+                ? "High"
+                : solver.costMultiplier === 1
+                  ? "Medium"
+                  : "Low"}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -400,7 +573,7 @@ export function SolverCard({ solver, onClick }) {
 }
 ```
 
-### 5.2 IntentReview Component
+#### 5.3. IntentReview Component
 
 Create `components/intent/IntentReview.js`:
 
@@ -408,69 +581,66 @@ Create `components/intent/IntentReview.js`:
 import React from "react";
 
 export function IntentReview({ intent, solver, onExecute, isConnected }) {
-  // Format the amount for display
-  const amount = parseFloat(intent.amount).toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
-  });
+  // Format token amount for display
+  const formatAmount = (amount, decimals = 18) => {
+    if (!amount) return "0";
+    return (Number(amount) / 10 ** decimals).toFixed(6);
+  };
 
-  // Calculate estimated cost based on solver
-  const estimatedCost = (solver.costMultiplier * 0.001).toFixed(6);
+  // Calculate estimated fee based on solver's cost multiplier
+  const estimatedFee = (0.001 * solver.costMultiplier).toFixed(6);
 
-  // Calculate estimated time in minutes
-  const estimatedTime = Math.ceil(solver.speedMultiplier * 2);
+  // Calculate estimated time based on solver's speed multiplier (in minutes)
+  const estimatedTime = Math.round(5 * solver.speedMultiplier);
 
   return (
     <div className="bg-slate-800 p-6 rounded-lg shadow-lg">
       <h2 className="text-2xl font-bold mb-4">Review Intent</h2>
+      <p className="mb-6">Review your intent details before execution</p>
 
-      <div className="mb-6">
-        <div className="flex items-center mb-4">
-          <div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center mr-3">
-            <span className="text-xl">🔄</span>
-          </div>
-          <div>
-            <h3 className="font-semibold">Selected Solver</h3>
-            <p>{solver.name}</p>
-          </div>
+      <div className="bg-slate-700 p-4 rounded-lg mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-slate-300">Solver:</span>
+          <span className="font-medium">{solver.name}</span>
         </div>
-
-        <div className="bg-slate-700 p-4 rounded-lg mb-4">
-          <h3 className="font-semibold mb-2">Intent Details</h3>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div>Transfer Amount:</div>
-            <div className="text-right">
-              {amount} {intent.sourceToken}
-            </div>
-
-            <div>From Chain:</div>
-            <div className="text-right">{intent.sourceChain}</div>
-
-            <div>To Chain:</div>
-            <div className="text-right">{intent.targetChain}</div>
-
-            <div>Destination Token:</div>
-            <div className="text-right">{intent.destToken}</div>
-
-            <div>Estimated Time:</div>
-            <div className="text-right">{estimatedTime} minutes</div>
-
-            <div>Estimated Gas:</div>
-            <div className="text-right">{estimatedCost} ETH</div>
-          </div>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-slate-300">From Chain:</span>
+          <span className="font-medium">{intent.sourceChain}</span>
+        </div>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-slate-300">To Chain:</span>
+          <span className="font-medium">{intent.targetChain}</span>
+        </div>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-slate-300">Token:</span>
+          <span className="font-medium">{intent.tokenSymbol}</span>
+        </div>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-slate-300">Amount:</span>
+          <span className="font-medium">
+            {formatAmount(intent.amount, intent.tokenDecimals)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-slate-300">Estimated Fee:</span>
+          <span className="font-medium">{estimatedFee} ETH</span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-slate-300">Estimated Time:</span>
+          <span className="font-medium">{estimatedTime} minutes</span>
         </div>
       </div>
 
       <button
-        onClick={onExecute}
-        disabled={!isConnected}
-        className={`w-full py-3 rounded-lg font-semibold ${
+        className={`w-full py-3 px-6 rounded-lg text-white font-medium transition-colors ${
           isConnected
             ? "bg-blue-600 hover:bg-blue-700"
-            : "bg-gray-600 cursor-not-allowed"
+            : "bg-gray-500 cursor-not-allowed"
         }`}
+        onClick={onExecute}
+        disabled={!isConnected}
       >
-        {isConnected ? "Execute Intent" : "Connect Wallet to Execute"}
+        Execute Intent
       </button>
 
       {!isConnected && (
@@ -483,13 +653,12 @@ export function IntentReview({ intent, solver, onExecute, isConnected }) {
 }
 ```
 
-### 5.3 IntentStatus Component
+#### 5.4. IntentStatus Component
 
 Create `components/intent/IntentStatus.js`:
 
 ```javascript
 import React from "react";
-import { motion } from "framer-motion";
 
 export function IntentStatus({ intent, solver, status, signedIntent }) {
   // Status display configurations
@@ -527,58 +696,38 @@ export function IntentStatus({ intent, solver, status, signedIntent }) {
       <h2 className="text-2xl font-bold mb-2">{currentConfig.title}</h2>
       <p className={`${currentConfig.color} text-lg mb-6`}>{status}</p>
 
-      <div className="flex justify-center mb-6">
-        {status !== "fulfilled" && status !== "failed" ? (
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
-            className="w-20 h-20 bg-slate-700 rounded-full flex items-center justify-center text-3xl"
-          >
-            {currentConfig.icon}
-          </motion.div>
-        ) : (
-          <div className="w-20 h-20 bg-slate-700 rounded-full flex items-center justify-center text-3xl">
-            {currentConfig.icon}
-          </div>
-        )}
-      </div>
+      <div className="text-5xl mb-6">{currentConfig.icon}</div>
 
       <p className="mb-6">{currentConfig.description}</p>
 
-      {signedIntent && (
-        <div className="bg-slate-700 p-4 rounded-lg mb-4 text-left">
-          <h3 className="font-semibold mb-2">Intent Details</h3>
-          <div className="grid grid-cols-1 gap-2 text-sm">
-            <div className="flex justify-between">
-              <span>Intent ID:</span>
-              <span className="font-mono text-xs overflow-hidden overflow-ellipsis">
-                {signedIntent.id.substring(0, 10)}...
-              </span>
-            </div>
-
-            <div className="flex justify-between">
-              <span>From Chain:</span>
-              <span>{intent.sourceChain}</span>
-            </div>
-
-            <div className="flex justify-between">
-              <span>To Chain:</span>
-              <span>{intent.targetChain}</span>
-            </div>
-
-            {status === "fulfilled" && (
-              <div className="mt-2 pt-2 border-t border-slate-600">
-                <a
-                  href={`https://sepolia.basescan.org/tx/${signedIntent.txHash}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-400 hover:underline"
-                >
-                  View Transaction →
-                </a>
-              </div>
-            )}
+      <div className="bg-slate-700 p-4 rounded-lg mb-6">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-slate-400 text-sm">From Chain</p>
+            <p>{intent.sourceChain}</p>
           </div>
+          <div>
+            <p className="text-slate-400 text-sm">To Chain</p>
+            <p>{intent.targetChain}</p>
+          </div>
+          <div>
+            <p className="text-slate-400 text-sm">Amount</p>
+            <p>
+              {intent.tokenSymbol}{" "}
+              {Number(intent.amount) / 10 ** intent.tokenDecimals}
+            </p>
+          </div>
+          <div>
+            <p className="text-slate-400 text-sm">Solver</p>
+            <p>{solver.name}</p>
+          </div>
+        </div>
+      </div>
+
+      {signedIntent && (
+        <div className="bg-slate-900 p-3 rounded text-left overflow-hidden">
+          <p className="text-slate-400 text-sm mb-1">Intent ID:</p>
+          <p className="text-xs text-slate-300 truncate">{signedIntent.id}</p>
         </div>
       )}
     </div>
@@ -586,291 +735,116 @@ export function IntentStatus({ intent, solver, status, signedIntent }) {
 }
 ```
 
-### 5.4 Chain Configuration Utility
+### 6. Create App Component with Providers
 
-Create `lib/chain-config.js`:
-
-```javascript
-// Chain configuration for testnet interactions
-export const CHAIN_CONFIG = {
-  // Base Sepolia testnet configuration
-  "base-sepolia": {
-    id: 84532,
-    name: "Base Sepolia",
-    rpcUrl: "https://sepolia.base.org",
-    blockExplorer: "https://sepolia.basescan.org",
-    currency: "ETH",
-    // Test tokens available on Base Sepolia
-    tokens: [
-      {
-        symbol: "USDC",
-        name: "USD Coin",
-        address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-        decimals: 6,
-      },
-      {
-        symbol: "WETH",
-        name: "Wrapped ETH",
-        address: "0x4200000000000000000000000000000000000006",
-        decimals: 18,
-      },
-    ],
-  },
-
-  // Optimism Sepolia testnet configuration
-  "optimism-sepolia": {
-    id: 11155420,
-    name: "Optimism Sepolia",
-    rpcUrl: "https://sepolia.optimism.io",
-    blockExplorer: "https://sepolia-optimism.etherscan.io",
-    currency: "ETH",
-    // Test tokens available on Optimism Sepolia
-    tokens: [
-      {
-        symbol: "USDC",
-        name: "USD Coin",
-        address: "0x5fd84259d66Cd46123540766Be93DFE6D43130D7",
-        decimals: 6,
-      },
-      {
-        symbol: "WETH",
-        name: "Wrapped ETH",
-        address: "0x4200000000000000000000000000000000000006",
-        decimals: 18,
-      },
-    ],
-  },
-};
-
-// Helper function to get chain details by ID or name
-export function getChainDetails(chainIdOrName) {
-  if (typeof chainIdOrName === "number") {
-    return Object.values(CHAIN_CONFIG).find(
-      (chain) => chain.id === chainIdOrName
-    );
-  }
-
-  return CHAIN_CONFIG[chainIdOrName];
-}
-
-// Get token details for a specific chain
-export function getTokensForChain(chainIdOrName) {
-  const chain = getChainDetails(chainIdOrName);
-  return chain ? chain.tokens : [];
-}
-```
-
-### 5.5 Custom Hook for Intent Management
-
-Create `hooks/useIntent.js`:
+Update `pages/_app.js`:
 
 ```javascript
-import { useState, useCallback } from "react";
-import { IntentBuilder, SolverClient } from "../lib/oif-components";
-import { getChainDetails } from "../lib/chain-config";
+import "../styles/globals.css";
+import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
+import { WagmiProvider } from "wagmi";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { wagmiConfig, chains } from "../lib/wallet-config";
 
-export function useIntent() {
-  const [intent, setIntent] = useState(null);
-  const [status, setStatus] = useState("idle");
-  const [error, setError] = useState(null);
+// Create React Query client
+const queryClient = new QueryClient();
 
-  // Create a new intent
-  const createIntent = useCallback(async (intentData, walletProvider) => {
-    try {
-      setStatus("creating");
-      setError(null);
+function MyApp({ Component, pageProps }) {
+  return (
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider chains={chains}>
+          <Component {...pageProps} />
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  );
+}
 
-      // Get chain details for validation
-      const sourceChain = getChainDetails(intentData.sourceChain);
-      const targetChain = getChainDetails(intentData.targetChain);
+export default MyApp;
+```
 
-      if (!sourceChain || !targetChain) {
-        throw new Error("Invalid chains specified");
-      }
+### 7. Create Main Page
 
-      // Build the intent using the OIF
-      const intentBuilder = new IntentBuilder({
-        sourceChain: intentData.sourceChain,
-        targetChain: intentData.targetChain,
-        tokenAddress: intentData.tokenAddress,
-        amount: intentData.amount,
-        recipient: intentData.recipient,
-      });
+Update `pages/index.js`:
 
-      const builtIntent = await intentBuilder.build();
+```javascript
+import Head from "next/head";
+import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { IntentChamber } from "../components/intent/IntentChamber";
 
-      // Sign the intent with the user's wallet
-      const signedIntent = await builtIntent.sign(walletProvider);
+export default function Home() {
+  return (
+    <div className="min-h-screen bg-slate-900 text-white">
+      <Head>
+        <title>Testnet Intent Chamber</title>
+        <meta
+          name="description"
+          content="A testnet-only intent chamber for token bridging"
+        />
+        <link rel="icon" href="/favicon.ico" />
+      </Head>
 
-      setIntent({
-        ...intentData,
-        builtIntent,
-        signedIntent,
-        id: signedIntent.id,
-        createdAt: new Date().toISOString(),
-      });
+      <header className="py-4 px-6 border-b border-slate-700">
+        <div className="container mx-auto flex justify-between items-center">
+          <h1 className="text-xl font-bold">Testnet Intent Chamber</h1>
+          <ConnectButton />
+        </div>
+      </header>
 
-      setStatus("created");
-      return signedIntent;
-    } catch (err) {
-      setStatus("error");
-      setError(err.message);
-      throw err;
-    }
-  }, []);
+      <main className="container mx-auto py-8 px-4">
+        <IntentChamber />
+      </main>
 
-  // Submit the intent to the blockchain
-  const submitIntent = useCallback(async (signedIntent) => {
-    try {
-      setStatus("submitting");
-
-      const solverClient = new SolverClient();
-      await solverClient.submitIntent(signedIntent);
-
-      setStatus("submitted");
-      return true;
-    } catch (err) {
-      setStatus("error");
-      setError(err.message);
-      throw err;
-    }
-  }, []);
-
-  // Check intent status
-  const checkStatus = useCallback(async (intentId) => {
-    try {
-      const solverClient = new SolverClient();
-      const currentStatus = await solverClient.getIntentStatus(intentId);
-
-      setStatus(currentStatus);
-      return currentStatus;
-    } catch (err) {
-      setError(err.message);
-      return "error";
-    }
-  }, []);
-
-  return {
-    intent,
-    status,
-    error,
-    createIntent,
-    submitIntent,
-    checkStatus,
-  };
+      <footer className="py-6 border-t border-slate-700 text-center text-slate-400">
+        <p>Powered by Open Intents Framework</p>
+      </footer>
+    </div>
+  );
 }
 ```
 
-### 10. Styles Configuration
+### 8. Create Environment Variables
 
-Create or update `styles/globals.css`:
+Create `.env.local` in your project root:
 
-```css
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-:root {
-  --primary-color: #3b82f6;
-  --background-color: #1e293b;
-  --card-background: #334155;
-  --text-color: #f8fafc;
-}
-
-body {
-  background-color: var(--background-color);
-  color: var(--text-color);
-}
-
-/* Custom animation for solving intents */
-@keyframes pulse {
-  0% {
-    opacity: 0.6;
-    transform: scale(0.98);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.01);
-  }
-  100% {
-    opacity: 0.6;
-    transform: scale(0.98);
-  }
-}
-
-.animate-pulse-slow {
-  animation: pulse 2s infinite;
-}
 ```
-
-### 11. Configuring the Solver
-
-When setting up your local solver in Docker, you will need to create a configuration file. Here's an example `solver-config.json`:
-
-```json
-{
-  "rpcProviders": {
-    "base-sepolia": "https://sepolia.base.org",
-    "optimism-sepolia": "https://sepolia.optimism.io"
-  },
-  "walletPrivateKey": "YOUR_PRIVATE_KEY_HERE",
-  "intentRoutes": [
-    {
-      "sourceChain": "base-sepolia",
-      "targetChain": "optimism-sepolia",
-      "supportedTokens": ["0x036CbD53842c5426634e7929541eC2318f3dCF7e"]
-    },
-    {
-      "sourceChain": "optimism-sepolia",
-      "targetChain": "base-sepolia",
-      "supportedTokens": ["0x5fd84259d66Cd46123540766Be93DFE6D43130D7"]
-    }
-  ],
-  "gasLimitMultiplier": 1.2,
-  "maxGasPrice": "100000000000", // 100 Gwei
-  "intentListeningInterval": 10000, // Poll for new intents every 10 seconds
-  "logLevel": "info"
-}
+NEXT_PUBLIC_WALLET_CONNECT_ID=your_wallet_connect_project_id
 ```
-
-**IMPORTANT: Never commit files with real private keys to your repository. Use environment variables or secure key management.**
 
 ## Testing Your Implementation
 
-1. Obtain testnet ETH from Base Sepolia and Optimism Sepolia faucets
-2. Start your application: `npm run dev`
-3. Connect your wallet to the application
-4. Create an intent to transfer tokens between chains
-5. Select a solver and submit your intent
-6. Monitor the status of your intent through the UI
+1. Get testnet tokens for Base Sepolia and Optimism Sepolia:
+
+   - [Base Sepolia Faucet](https://www.basescan.org/faucet)
+   - [Optimism Sepolia Faucet](https://www.optimism.io/faucet)
+
+2. Start your Next.js application:
+
+   ```bash
+   npm run dev
+   ```
+
+3. Connect your wallet and ensure it's configured for the testnet networks.
+
+4. Create an intent to bridge tokens between the two testnets.
+
+5. Follow the flow to select a solver, review the intent, and execute it.
 
 ## Troubleshooting
 
-### Common Issues
+- **Wallet Connection Issues**: Ensure you have the proper `NEXT_PUBLIC_WALLET_CONNECT_ID` in your `.env.local` file.
+- **Missing Testnet Tokens**: Use the provided faucet links to get testnet tokens.
+- **RPC Errors**: If you encounter RPC connection issues, consider using alternative RPC providers for the testnets.
 
-1. **Wallet Connection Errors**
+- **Intent Execution Failures**: Check that your solver is properly configured and running.
 
-   - Ensure you've set the correct WalletConnect Project ID
-   - Verify that your RPC endpoints for the testnets are working
+## Next Steps
 
-2. **Intent Creation Failures**
+- Customize the UI to match your branding
+- Add more testnet networks
+- Implement more complex intent types
+- Add an intent history feature
+- Enhance error handling and user feedback
 
-   - Check that you have sufficient testnet ETH for gas fees
-   - Verify token contract addresses are correct for the testnets
-
-3. **Solver Communication Issues**
-   - Ensure your Docker container with the solver is running properly
-   - Check that your solver has sufficient testnet ETH to submit fulfillment transactions
-   - Verify network connectivity between your solver container and the blockchain RPC endpoints
-
-### Getting Testnet Tokens
-
-- Base Sepolia: Use the [Base Sepolia Faucet](https://www.basescan.org/faucet)
-- Optimism Sepolia: Use the [Optimism Sepolia Faucet](https://www.optimism.io/faucet)
-
-## Additional Resources
-
-- [OIF Documentation](https://bootnodedev.github.io/intents-framework-core/)
-- [Base Sepolia Explorer](https://sepolia.basescan.org/)
-- [Optimism Sepolia Explorer](https://sepolia-optimism.etherscan.io/)
-- [Etherscan](https://etherscan.io) for tracking transactions
+By following this guide, you should have a functional testnet Intent Chamber that demonstrates the core capabilities of the Open Intents Framework.
